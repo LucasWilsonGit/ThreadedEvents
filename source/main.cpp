@@ -10,42 +10,42 @@ int main() {
 
 	std::unique_ptr<SomeEvent> e(SomeEvent::create());
 	auto& l = e->listen([&](int a) { 
-		auto& logger = Logger::GetInstance();
+		auto& logger = Logger::get_instance();
 		std::stringstream s("");
 		s << "Main thread: event happened arg " << a << std::endl;
-		logger->LogAsync(s.str());
+		logger->log_async(s.str());
 		e1_run_count++;
 	});
 
 	std::unique_ptr<Event<int>> e2(Event<int>::create());
 	auto& l2 = e2->listen([&](int) {
-		Logger::GetInstance()->Log(std::to_string(e1_run_count.load()));
+		Logger::get_instance()->log(std::to_string(e1_run_count.load()));
 	});
 
 	std::thread t2([&]() {
 		e->fire(1);
-		Logger::GetInstance()->Log("after fire 1");
+		Logger::get_instance()->log("after fire 1");
 		e->fire(2);
-		Logger::GetInstance()->Log("after fire 2");
+		Logger::get_instance()->log("after fire 2");
 		e->fire(3);
-		Logger::GetInstance()->Log("after fire 3");
+		Logger::get_instance()->log("after fire 3");
 
 		e->wait();
-		Logger::GetInstance()->Log("after wait");
+		Logger::get_instance()->log("after wait");
 
 		e->fire(4);
-		Logger::GetInstance()->Log("after 4");
+		Logger::get_instance()->log("after 4");
 
-		Logger::GetInstance()->Log("before 5");
+		Logger::get_instance()->log("before 5");
 		e->fire(5);
-		Logger::GetInstance()->Log("after 5");
+		Logger::get_instance()->log("after 5");
 	});
 
 	bool run = true;
 
 	std::thread t3([&] {
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
-		Logger::GetInstance()->Log("fire 100");
+		Logger::get_instance()->log("fire 100");
 		e->fire(100);
 
 		std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -64,22 +64,9 @@ int main() {
 	t3.join();
 
 	if (!l->drop()) {
-		Logger::GetInstance()->Log("Failed to drop listener l");
+		Logger::get_instance()->log("Failed to drop listener l");
 	}
 	l2->drop();
-
-	e.reset();
-	e2.reset();
-
-	while (true) {}
-
-	//std::cout << "listener& l = " << l.get() << " in ptr @" << &l << std::endl;
-	/*if (!e->drop(l->get_ID())) {
-		Logger::GetInstance()->Log("drop failed");
-	}*/
-	/*if (!l->drop()) {
-		Logger::GetInstance()->Log("drop failed");
-	}*/
 
 	
 

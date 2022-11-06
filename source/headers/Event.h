@@ -16,11 +16,6 @@
 #include <chrono>
 #include <stdexcept>
 
-#ifndef NDEBUG
-#include "Logger.h"
-#include <sstream>
-#endif
-
 template <class... T>
 class Event;
 
@@ -35,7 +30,7 @@ class Listener {
 private:
 	static inline std::atomic<uint64_t> s_aID{ 0 };
 
-	uint64_t m_ID;
+	const uint64_t m_ID;
 	std::vector<_args_tuple_t> m_unprocessed_invocations;
 	std::mutex m_mtx;
 	Event<ArgTypes...>& m_event;
@@ -47,26 +42,21 @@ protected:
 public:
 	~Listener() { };
 
-	bool operator==(const Listener& l) {
+	bool operator==(const Listener& l) const {
 		return m_ID = l.m_ID;
 	}
 
 	//blocking locks access mutex, invokes callback foreach args tuple in m_unprocessed_invocations, clears vector when finished
 	void poll() {
-		
-		try {
-			std::unique_lock lk(m_mtx);
-			for (auto& args_tup : m_unprocessed_invocations) {
-				std::apply(m_func, std::forward<std::tuple<ArgTypes...>>(args_tup));
-			}
-			m_unprocessed_invocations.clear();
+		std::unique_lock lk(m_mtx);
+		for (auto& args_tup : m_unprocessed_invocations) {
+			std::apply(m_func, std::forward<std::tuple<ArgTypes...>>(args_tup));
 		}
-		catch (...) {
-			Logger::GetInstance()->Log("Listener exception this(LIstener*): " + std::to_string((uint64_t)this));
-		}
+		m_unprocessed_invocations.clear();
 	};
 
 	bool drop() {
+		std::unique_lock lk(m_mtx);
 		return m_event.drop(m_ID);
 	}
 
@@ -130,7 +120,7 @@ public:
 		m_last_cv_wakeup = std::chrono::high_resolution_clock::now();
 		m_wait_cv.notify_all();
 
-		while (m_waiting_count > 0) {}
+		while (m_waiting_count > 0) {} //maybe I could implement some mutex so this wasn't a busy wait for the semaphore but I think that would be slow - Lucas
 
 		std::unique_lock lk2(m_cv_mtx);
 		m_wakeup = false;
@@ -170,16 +160,16 @@ public:
 		return false;
 	};
 
+	//yields the thread until it is woken up by the event being fired
 	void wait() {
-		/*if (m_owner_thread_id == std::this_thread::get_id()) {
-			throw std::runtime_error("called wait from thread owning Event object");
-		}*/
-		//event can be polled by any other thread with a ref to the unique_ptr owning it 
-
 		std::unique_lock lk(m_cv_mtx);
-		m_waiting_count++;
+		m_waiting_count++; //increment the waiting count of the event (number of threads waiting for the event to fire)
 		m_wait_cv.wait(lk, [&, this] { return m_wakeup; });
-		m_waiting_count--; 
+		m_waiting_count--;  //decrement the waiting count
+
+		//waiting count is used in the fire method for a semaphore to control the predicate boolean m_wakeup
+		//see Event<T...>::fire(T...) 
+		
 	}
 };
 
